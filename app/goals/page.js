@@ -3,26 +3,26 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 const DEFAULT_GOALS = [
-  { id: 1, emoji: "🏃", label: "Fitness" },
-  { id: 2, emoji: "💻", label: "Coding" },
-  { id: 3, emoji: "📚", label: "Reading" },
-  { id: 4, emoji: "🧘", label: "Meditation" },
-  { id: 5, emoji: "🥗", label: "Nutrition" },
-  { id: 6, emoji: "💰", label: "Finance" },
-  { id: 7, emoji: "🎨", label: "Creativity" },
-  { id: 8, emoji: "😴", label: "Sleep" },
-  { id: 9, emoji: "🌍", label: "Travel" },
-  { id: 10, emoji: "🎵", label: "Music" },
-  { id: 11, emoji: "✍️", label: "Writing" },
-  { id: 12, emoji: "🤝", label: "Networking" },
-  { id: 13, emoji: "🧠", label: "Learning" },
-  { id: 14, emoji: "💪", label: "Strength" },
-  { id: 15, emoji: "🏊", label: "Swimming" },
-  { id: 16, emoji: "🚴", label: "Cycling" },
-  { id: 17, emoji: "🍳", label: "Cooking" },
-  { id: 18, emoji: "📷", label: "Photography" },
-  { id: 19, emoji: "🌱", label: "Mindfulness" },
-  { id: 20, emoji: "🎯", label: "Focus" },
+  { id: 1, label: "Fitness" },
+  { id: 2, label: "Coding" },
+  { id: 3, label: "Reading" },
+  { id: 4, label: "Meditation" },
+  { id: 5, label: "Nutrition" },
+  { id: 6, label: "Finance" },
+  { id: 7, label: "Creativity" },
+  { id: 8, label: "Sleep" },
+  { id: 9, label: "Travel" },
+  { id: 10, label: "Music" },
+  { id: 11, label: "Writing" },
+  { id: 12, label: "Networking" },
+  { id: 13, label: "Learning" },
+  { id: 14, label: "Strength" },
+  { id: 15, label: "Swimming" },
+  { id: 16, label: "Cycling" },
+  { id: 17, label: "Cooking" },
+  { id: 18, label: "Photography" },
+  { id: 19, label: "Mindfulness" },
+  { id: 20, label: "Focus" },
 ]
 
 export default function Goals() {
@@ -33,7 +33,7 @@ export default function Goals() {
   const [loading, setLoading] = useState(false)
   const [showAddGoal, setShowAddGoal] = useState(false)
   const [newGoal, setNewGoal] = useState('')
-  const [newEmoji, setNewEmoji] = useState('⭐')
+  const MAX = 5
 
   const filtered = goals.filter(g =>
     g.label.toLowerCase().includes(search.toLowerCase())
@@ -45,7 +45,7 @@ export default function Goals() {
     if (selected.find(s => s.id === goal.id)) {
       setSelected(selected.filter(s => s.id !== goal.id))
     } else {
-      if (selected.length >= 3) return
+      if (selected.length >= MAX) return
       setSelected([...selected, goal])
     }
   }
@@ -54,30 +54,34 @@ export default function Goals() {
     if (!newGoal.trim()) return
     const custom = {
       id: goals.length + 1,
-      emoji: newEmoji,
-      label: newGoal.trim()
+      label: newGoal.trim(),
     }
     setGoals([...goals, custom])
-    setSelected([...selected, custom].slice(0, 3))
+    if (selected.length < MAX) setSelected([...selected, custom])
     setNewGoal('')
     setShowAddGoal(false)
     setSearch('')
   }
 
   const handleContinue = async () => {
-    if (selected.length < 3) {
-      alert('Please select exactly 3 goals')
+    if (selected.length < 1) {
+      alert('Please select at least 1 goal')
       return
     }
     setLoading(true)
     const name = localStorage.getItem('userName') || 'User'
+    
+    // API needs exactly 3 goals — pad if less
+    const goalLabels = selected.map(g => g.label)
+    while (goalLabels.length < 3) goalLabels.push(goalLabels[0])
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/goals_embedding`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name,
-          goals: selected.map(g => g.label)
+          goals: goalLabels.slice(0, 3)
         })
       })
       const data = await res.json()
@@ -92,79 +96,78 @@ export default function Goals() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col px-6 pt-12 pb-32 relative z-10 bg-transparent">
+    <main className="min-h-screen flex flex-col px-6 pt-12 pb-32 relative z-10">
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-3xl font-black text-gray-900">Pick Your Goals</h1>
-        <p className="text-gray-500 mt-1">Select exactly 3 goals</p>
+        <h1 className="text-3xl font-black text-gray-900">Your Goals</h1>
+        <p className="text-gray-400 mt-1 text-sm">Pick up to 5 goals</p>
       </div>
 
-      {/* Progress */}
-      <div className="flex gap-2 mb-4">
-        {[1,2,3].map(i => (
-          <div key={i} className={`h-2 flex-1 rounded-full transition-colors ${i <= selected.length ? 'bg-purple-500' : 'bg-gray-200'}`} />
+      {/* Progress bar */}
+      <div className="flex gap-1.5 mb-5">
+        {Array.from({ length: MAX }).map((_, i) => (
+          <div
+            key={i}
+            className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+              i < selected.length ? 'bg-[#6C63FF]' : 'bg-gray-200'
+            }`}
+          />
         ))}
       </div>
 
-      {/* Selected goals pills */}
+      {/* Selected pills */}
       {selected.length > 0 && (
         <div className="flex gap-2 flex-wrap mb-4">
           {selected.map(g => (
             <span
               key={g.id}
               onClick={() => toggle(g)}
-              className="bg-purple-500 text-white px-3 py-1 rounded-full text-sm font-semibold cursor-pointer"
+              className="bg-[#6C63FF] text-white px-3 py-1.5 rounded-full text-xs font-semibold cursor-pointer flex items-center gap-1"
             >
-              {g.emoji} {g.label} ✕
+              {g.label}
+              <span className="opacity-60 text-xs">✕</span>
             </span>
           ))}
         </div>
       )}
 
       {/* Search */}
-      <div className="relative mb-4">
-        <span className="absolute left-3 top-3 text-gray-400">🔍</span>
+      <div className="relative mb-5">
         <input
           type="text"
-          placeholder="Search goals..."
+          placeholder="Search or add goals"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-3 rounded-2xl border-2 border-gray-200 bg-white focus:outline-none focus:border-purple-500"
+          className="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white focus:outline-none focus:border-purple-400 text-sm shadow-sm"
         />
       </div>
 
-      {/* Add custom goal */}
-      {noResults && !showAddGoal && (
+      {/* No results — add custom */}
+      {noResults && (
         <button
           onClick={() => { setNewGoal(search); setShowAddGoal(true) }}
-          className="w-full py-3 border-2 border-dashed border-purple-400 rounded-2xl text-purple-600 font-semibold mb-4"
+          className="w-full py-3 border border-dashed border-purple-300 rounded-xl text-purple-500 font-medium mb-4 text-sm"
         >
-          + Add "{search}" as new goal
+          + Add "{search}" as custom goal
         </button>
       )}
 
+      {/* Custom goal input */}
       {showAddGoal && (
-        <div className="bg-white rounded-2xl p-4 mb-4 border-2 border-purple-200">
-          <p className="font-semibold text-gray-700 mb-2">Add custom goal</p>
+        <div className="bg-white rounded-xl p-4 mb-4 border border-gray-200 shadow-sm">
+          <p className="font-semibold text-gray-700 mb-2 text-sm">Name your goal</p>
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={newEmoji}
-              onChange={(e) => setNewEmoji(e.target.value)}
-              className="w-12 text-center border-2 border-gray-200 rounded-xl py-2"
-              maxLength={2}
-            />
             <input
               type="text"
               value={newGoal}
               onChange={(e) => setNewGoal(e.target.value)}
-              placeholder="Goal name"
-              className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500"
+              placeholder="e.g. Marathon training"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-purple-400 text-sm"
             />
             <button
               onClick={addCustomGoal}
-              className="bg-purple-500 text-white px-4 rounded-xl font-semibold"
+              className="bg-[#6C63FF] text-white px-4 rounded-lg font-semibold text-sm"
             >
               Add
             </button>
@@ -172,47 +175,56 @@ export default function Goals() {
         </div>
       )}
 
-      {/* Goals grid */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      {/* Goals list */}
+      <div className="space-y-2">
         {filtered.map(goal => {
-          const isSelected = selected.find(s => s.id === goal.id)
-          const isDisabled = !isSelected && selected.length >= 3
+          const isSelected = !!selected.find(s => s.id === goal.id)
+          const isDisabled = !isSelected && selected.length >= MAX
+
           return (
             <button
               key={goal.id}
               onClick={() => toggle(goal)}
               disabled={isDisabled}
-              className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all
+              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border transition-all text-left
                 ${isSelected
-                  ? 'bg-purple-500 border-purple-500 text-white'
+                  ? 'bg-[#6C63FF] border-[#6C63FF] text-white'
                   : isDisabled
-                    ? 'bg-gray-100 border-gray-100 text-gray-300'
-                    : 'bg-white border-gray-200 text-gray-700 hover:border-purple-300'
+                    ? 'bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed'
+                    : 'bg-white border-gray-200 text-gray-800 hover:border-purple-300'
                 }`}
             >
-              <span className="text-2xl mb-1">{goal.emoji}</span>
-              <span className="text-xs font-semibold">{goal.label}</span>
+              <span className="font-semibold text-sm">{goal.label}</span>
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all
+                ${isSelected ? 'bg-white border-white' : 'border-gray-300'}`}
+              >
+                {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-[#6C63FF]" />}
+              </div>
             </button>
           )
         })}
       </div>
 
-      {/* Fixed bottom button */}
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-[#F5F0E8]">
+      {/* Fixed bottom */}
+      <div className="fixed bottom-0 left-0 right-0 p-5 bg-[#F5F0E8] border-t border-gray-100">
         <button
           onClick={handleContinue}
-          disabled={selected.length !== 3 || loading}
-          className={`w-full py-4 rounded-2xl text-lg font-bold transition-colors
-            ${selected.length === 3
-              ? 'bg-[#6C63FF] text-white hover:bg-purple-700'
+          disabled={selected.length < 1 || loading}
+          className={`w-full py-4 rounded-xl text-base font-black transition-all
+            ${selected.length >= 1
+              ? 'bg-[#6C63FF] text-white shadow-lg shadow-purple-200'
               : 'bg-gray-200 text-gray-400 cursor-not-allowed'
             }`}
         >
-          {loading ? 'Setting up...' : `Continue (${selected.length}/3)`}
+          {loading
+            ? 'Setting up...'
+            : selected.length >= 1
+              ? `Continue with ${selected.length} goal${selected.length > 1 ? 's' : ''} →`
+              : 'Select at least 1 goal'
+          }
         </button>
       </div>
 
     </main>
   )
 }
-
