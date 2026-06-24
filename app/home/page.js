@@ -19,10 +19,11 @@ export default function HomePage() {
   useEffect(() => {
     const name = localStorage.getItem('userName') || 'Friend'
     setUserName(name)
+    const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+    setJoinedGroups(stored)
     const userId = localStorage.getItem('userId')
     if (userId && userId !== 'null') {
       fetchFeed()
-      fetchJoinedGroups()
     }
   }, [])
 
@@ -41,26 +42,12 @@ export default function HomePage() {
     }
   }
 
-  const fetchJoinedGroups = async () => {
-    const userId = localStorage.getItem('userId')
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/match?user_id=${userId}`)
-      const data = await res.json()
-      setJoinedGroups(data.matched_groups || [])
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
   const addTask = async () => {
     if (!newTask.trim()) return
     const userId = localStorage.getItem('userId')
-    
-    // show immediately — don't wait for API
     const tempTask = { id: Date.now(), description: newTask, completed: false }
     setTasks(prev => [...prev, tempTask])
     setNewTask('')
-    
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tasks`, {
         method: 'POST',
@@ -68,10 +55,8 @@ export default function HomePage() {
         body: JSON.stringify({ user_id: userId, description: newTask })
       })
       const data = await res.json()
-      // replace temp id with real id
       setTasks(prev => prev.map(t => t.id === tempTask.id ? { ...t, id: data.task_id } : t))
     } catch (err) {
-      // remove task if failed
       setTasks(prev => prev.filter(t => t.id !== tempTask.id))
       console.error(err)
     }
@@ -79,14 +64,25 @@ export default function HomePage() {
 
   const completeTask = async (taskId) => {
     const userId = localStorage.getItem('userId')
+    // optimistic update
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t))
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tasks/${taskId}/complete?user_id=${userId}`, {
         method: 'PATCH'
       })
-      setTasks(tasks.map(t => t.id === taskId ? { ...t, completed: true } : t))
     } catch (err) {
+      // revert if failed
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: false } : t))
       console.error(err)
     }
+  }
+
+  const sendToGroup = async (group) => {
+    // store tasks to send
+    localStorage.setItem('tasksToSend', JSON.stringify(completed))
+    sessionStorage.setItem('sendTasks', 'true')
+    setShowGroupModal(false)
+    router.push(`/group/${group.id}`)
   }
 
   return (
@@ -118,8 +114,6 @@ export default function HomePage() {
       {/* Tasks Tab */}
       {activeTab === 'tasks' && (
         <div className="px-6 flex flex-col gap-4 pb-40">
-
-          {/* Date header */}
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">TODAY</p>
             <p className="text-lg font-black text-gray-900">
@@ -128,7 +122,6 @@ export default function HomePage() {
             <p className="text-sm text-gray-400 mt-1">{pending.length} tasks remaining</p>
           </div>
 
-          {/* Add task input */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="flex items-center px-4 py-3 gap-3">
               <div className="w-5 h-5 rounded-full border-2 border-gray-200"/>
@@ -149,7 +142,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Pending tasks */}
           {pending.length > 0 && (
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 px-1">Pending</p>
@@ -168,7 +160,6 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Completed tasks */}
           {completed.length > 0 && (
             <div>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2 px-1">Completed</p>
@@ -186,7 +177,6 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Empty state */}
           {tasks.length === 0 && (
             <div className="text-center py-16">
               <p className="text-4xl mb-3">✅</p>
@@ -194,13 +184,18 @@ export default function HomePage() {
               <p className="text-sm text-gray-400 mt-1">Add your first task above</p>
             </div>
           )}
-
         </div>
       )}
 
       {/* Feed Tab */}
       {activeTab === 'feed' && (
-        <div className="px-6 flex flex-col gap-3">
+        <div className="px-6 flex flex-col gap-3 pb-20">
+          <button
+            onClick={() => router.push('/reels')}
+            className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-2xl font-bold text-sm"
+          >
+            🎬 Watch Reels
+          </button>
           {loadingFeed && (
             <div className="flex justify-center py-10">
               <div className="w-8 h-8 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin"/>
@@ -229,7 +224,7 @@ export default function HomePage() {
 
       {/* Groups Tab */}
       {activeTab === 'groups' && (
-        <div className="px-6 flex flex-col gap-3">
+        <div className="px-6 flex flex-col gap-3 pb-20">
           <button
             onClick={() => router.push('/groups')}
             className="w-full py-3 border border-dashed border-purple-300 rounded-xl text-purple-500 font-medium text-sm"
@@ -242,15 +237,25 @@ export default function HomePage() {
             </div>
           )}
           {joinedGroups.map(group => (
-            <div key={group.id} className="bg-white rounded-2xl p-4 border border-gray-100">
-              <p className="font-bold text-gray-900 text-sm">{group.name}</p>
-              <p className="text-xs text-gray-400 mt-1">{group.description}</p>
+            <div
+              key={group.id}
+              onClick={() => router.push(`/group/${group.id}`)}
+              className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm cursor-pointer flex items-center gap-3"
+            >
+              <div className="w-10 h-10 rounded-full bg-[#6C63FF] flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-black">{group.name?.charAt(0)}</span>
+              </div>
+              <div className="flex-1">
+                <p className="font-bold text-gray-900 text-sm">{group.name}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{group.description}</p>
+              </div>
+              <span className="text-gray-300 text-xl">›</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* Send to group button — tasks tab only */}
+      {/* Send to group button */}
       {activeTab === 'tasks' && (
         <div className="fixed bottom-16 left-0 right-0 px-6 py-3 bg-[#F5F0E8] border-t border-gray-100">
           <button
@@ -263,78 +268,72 @@ export default function HomePage() {
       )}
 
       {/* Group modal */}
-{showGroupModal && (
-  <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-end">
-    <div className="bg-white w-full rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="font-black text-gray-900 text-lg">Send to Group</h2>
-        <button onClick={() => setShowGroupModal(false)} className="text-gray-400 text-xl">✕</button>
-      </div>
+      {showGroupModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-end">
+          <div className="bg-white w-full rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-black text-gray-900 text-lg">Send to Group</h2>
+              <button onClick={() => setShowGroupModal(false)} className="text-gray-400 text-xl">✕</button>
+            </div>
 
-      {/* Message preview */}
-      <div className="bg-purple-50 rounded-2xl p-4 mb-4 border border-purple-100">
-        <p className="text-xs font-bold text-purple-400 uppercase mb-2">Message Preview</p>
-        <p className="text-sm font-bold text-gray-900 mb-2">
-          🎯 {userName}'s Daily Progress
-        </p>
-        <p className="text-xs text-gray-500 mb-2">
-          {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-        </p>
-        {completed.length > 0 ? (
-          <div className="space-y-1">
-            {completed.map((task, i) => (
-              <p key={task.id} className="text-sm text-gray-700">
-                ✅ {task.description}
+            <div className="bg-purple-50 rounded-2xl p-4 mb-4 border border-purple-100">
+              <p className="text-xs font-bold text-purple-400 uppercase mb-2">Message Preview</p>
+              <p className="text-sm font-bold text-gray-900 mb-2">🎯 {userName}'s Daily Progress</p>
+              <p className="text-xs text-gray-500 mb-2">
+                {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
               </p>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-400 italic">No completed tasks yet — complete some tasks first!</p>
-        )}
-        {pending.length > 0 && (
-          <div className="mt-2 pt-2 border-t border-purple-100">
-            <p className="text-xs text-gray-400">{pending.length} tasks still in progress 💪</p>
-          </div>
-        )}
-      </div>
-
-      {/* Group list */}
-      {joinedGroups.length === 0 ? (
-        <div className="text-center py-6">
-          <p className="text-gray-400 text-sm">You haven't joined any groups yet</p>
-          <button
-            onClick={() => { setShowGroupModal(false); router.push('/groups') }}
-            className="mt-3 text-[#6C63FF] font-semibold text-sm"
-          >
-            Find Groups →
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs font-bold text-gray-400 uppercase">Choose a group</p>
-          {joinedGroups.map(group => (
-            <button
-              key={group.id}
-              onClick={() => {
-                alert(`Sent to ${group.name}! 🎉`)
-                setShowGroupModal(false)
-              }}
-              className="w-full bg-white border-2 border-gray-100 hover:border-purple-300 rounded-2xl p-4 text-left transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">{group.name}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{group.description}</p>
+              {completed.length > 0 ? (
+                <div className="space-y-1">
+                  {completed.map(task => (
+                    <p key={task.id} className="text-sm text-gray-700">✅ {task.description}</p>
+                  ))}
                 </div>
-                <span className="text-[#6C63FF] font-bold text-sm">Send →</span>
+              ) : (
+                <p className="text-sm text-gray-400 italic">No completed tasks yet!</p>
+              )}
+              {pending.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-purple-100">
+                  <p className="text-xs text-gray-400">{pending.length} tasks still in progress 💪</p>
+                </div>
+              )}
+            </div>
+
+            {joinedGroups.length === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-gray-400 text-sm">You haven't joined any groups yet</p>
+                <button
+                  onClick={() => { setShowGroupModal(false); router.push('/groups') }}
+                  className="mt-3 text-[#6C63FF] font-semibold text-sm"
+                >
+                  Find Groups →
+                </button>
               </div>
-            </button>
-          ))}
+            ) : (
+              <div className="flex flex-col gap-3">
+                <p className="text-xs font-bold text-gray-400 uppercase">Choose a group</p>
+                {joinedGroups.map(group => (
+                  <button
+                    key={group.id}
+                    onClick={() => sendToGroup(group)}
+                    className="w-full bg-white border-2 border-gray-100 hover:border-purple-300 rounded-2xl p-4 text-left transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-[#6C63FF] flex items-center justify-center flex-shrink-0">
+                        <span className="text-white font-black text-sm">{group.name?.charAt(0)}</span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-bold text-gray-900 text-sm">{group.name}</p>
+                        <p className="text-xs text-gray-400">{group.description}</p>
+                      </div>
+                      <span className="text-[#6C63FF] font-bold text-sm">Send →</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
-    </div>
-  </div>
-)}
 
       {/* Bottom nav */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex">
@@ -358,4 +357,3 @@ export default function HomePage() {
     </main>
   )
 }
-

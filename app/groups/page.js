@@ -14,19 +14,20 @@ export default function Groups() {
 
   useEffect(() => {
     fetchGroups()
+    // load already joined groups from localStorage
+    const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+    setJoined(stored.map(g => g.id))
   }, [])
 
   const fetchGroups = async () => {
     const userId = localStorage.getItem('userId')
-    console.log('fetching groups for userId:', userId)
     if (!userId || userId === 'null') return
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/match?user_id=${userId}`)
       const data = await res.json()
-      console.log('groups data:', data)
       setGroups(data.matched_groups || [])
     } catch (err) {
-      console.error('fetch groups error:', err)
+      console.error(err)
     } finally {
       setLoading(false)
     }
@@ -34,11 +35,16 @@ export default function Groups() {
 
   const joinGroup = async (groupId) => {
     const userId = localStorage.getItem('userId')
+    setJoined(prev => [...prev, groupId])
+    const group = groups.find(g => g.id === groupId)
+    if (group) {
+      const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+      localStorage.setItem('joinedGroups', JSON.stringify([...stored, group]))
+    }
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/join?user_id=${userId}`, {
         method: 'POST'
       })
-      setJoined([...joined, groupId])
     } catch (err) {
       console.error(err)
     }
@@ -48,47 +54,91 @@ export default function Groups() {
     const userId = localStorage.getItem('userId')
     if (!newGroupName || !newGroupDesc) return
     setCreating(true)
+
+    const tempGroup = {
+      id: Date.now().toString(),
+      name: newGroupName,
+      description: newGroupDesc
+    }
+    setGroups(prev => [...prev, tempGroup])
+    setJoined(prev => [...prev, tempGroup.id])
+
+    const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+    localStorage.setItem('joinedGroups', JSON.stringify([...stored, tempGroup]))
+
+    setShowCreate(false)
+    setNewGroupName('')
+    setNewGroupDesc('')
+    setCreating(false)
+
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userId,
-          name: newGroupName,
-          description: newGroupDesc
+          name: tempGroup.name,
+          description: tempGroup.description
         })
       })
       const data = await res.json()
-      
-      // add to groups list directly — don't wait for match
-      const newGroup = {
-        id: data.group_id,
-        name: newGroupName,
-        description: newGroupDesc
-      }
-      setGroups(prev => [...prev, newGroup])
-      setJoined(prev => [...prev, data.group_id])
-      setShowCreate(false)
-      setNewGroupName('')
-      setNewGroupDesc('')
+      const updated = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+        .map(g => g.id === tempGroup.id ? { ...g, id: data.group_id } : g)
+      localStorage.setItem('joinedGroups', JSON.stringify(updated))
     } catch (err) {
       console.error(err)
-    } finally {
-      setCreating(false)
     }
   }
 
   return (
-    <main className="min-h-screen flex flex-col px-6 pt-12 pb-32 relative z-10">
+    <main className="min-h-screen flex flex-col pb-32 relative z-10">
 
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button onClick={() => router.back()} className="text-gray-400 text-xl">←</button>
-        <div>
-          <h1 className="text-2xl font-black text-gray-900">Groups</h1>
-          <p className="text-gray-400 text-sm">Find your community</p>
+      {/* Header — WhatsApp style */}
+      <div className="bg-[#6C63FF] px-6 pt-12 pb-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.back()} className="text-white text-xl">←</button>
+          <div>
+            <h1 className="text-xl font-black text-white">Groups</h1>
+            <p className="text-white/70 text-xs">{groups.length} groups found</p>
+          </div>
         </div>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="bg-white/20 text-white px-3 py-1.5 rounded-full text-xs font-semibold"
+        >
+          + New
+        </button>
       </div>
+
+      {/* Create group form */}
+      {showCreate && (
+        <div className="mx-4 mt-4 bg-white rounded-2xl p-4 border border-purple-100 shadow-sm">
+          <h3 className="font-bold text-gray-900 mb-3">Create Group</h3>
+          <div className="space-y-3">
+            <input
+              type="text"
+              placeholder="Group name"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-purple-400 text-sm"
+            />
+            <textarea
+              placeholder="What is this group about?"
+              value={newGroupDesc}
+              onChange={(e) => setNewGroupDesc(e.target.value)}
+              rows={2}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-purple-400 text-sm resize-none"
+            />
+            <button
+              onClick={createGroup}
+              disabled={creating || !newGroupName || !newGroupDesc}
+              className="w-full bg-[#6C63FF] text-white py-2.5 rounded-xl font-bold text-sm"
+            >
+              {creating ? 'Creating...' : 'Create Group'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {loading && (
@@ -97,91 +147,57 @@ export default function Groups() {
         </div>
       )}
 
-      {/* Groups list */}
-      {!loading && groups.map(group => (
-        <div key={group.id} className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm mb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <h3 className="font-bold text-gray-900">{group.name}</h3>
-              <p className="text-sm text-gray-400 mt-0.5">{group.description}</p>
+      {/* Groups list — WhatsApp style */}
+      <div className="mt-2">
+        {!loading && groups.length === 0 && !showCreate && (
+          <div className="text-center py-20">
+            <p className="text-4xl mb-3">👥</p>
+            <p className="font-bold text-gray-700">No groups found</p>
+            <p className="text-sm text-gray-400 mt-1">Create one above!</p>
+          </div>
+        )}
+
+        {groups.map(group => (
+          <div
+            key={group.id}
+            onClick={() => joined.includes(group.id) && router.push(`/group/${group.id}`)}
+            className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white"
+          >
+            {/* Avatar */}
+            <div className="w-12 h-12 rounded-full bg-[#6C63FF] flex items-center justify-center flex-shrink-0">
+              <span className="text-white font-black text-lg">
+                {group.name?.charAt(0).toUpperCase()}
+              </span>
             </div>
-            <div className="flex items-center gap-2 ml-3">
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-gray-900 text-sm">{group.name}</p>
+              <p className="text-xs text-gray-400 truncate mt-0.5">{group.description}</p>
+            </div>
+
+            {/* Action */}
+            {joined.includes(group.id) ? (
+              <span className="text-gray-300 text-xl flex-shrink-0">›</span>
+            ) : (
               <button
-                onClick={() => joinGroup(group.id)}
-                disabled={joined.includes(group.id)}
-                className={`px-4 py-2 rounded-xl font-semibold text-sm transition-colors
-                  ${joined.includes(group.id)
-                    ? 'bg-green-100 text-green-600'
-                    : 'bg-[#6C63FF] text-white'
-                  }`}
+                onClick={(e) => { e.stopPropagation(); joinGroup(group.id) }}
+                className="bg-[#6C63FF] text-white px-3 py-1.5 rounded-full text-xs font-semibold flex-shrink-0"
               >
-                {joined.includes(group.id) ? '✓ Joined' : 'Join'}
+                Join
               </button>
-              {joined.includes(group.id) && (
-                <button
-                  onClick={() => router.push(`/group/${group.id}`)}
-                  className="bg-purple-100 text-purple-600 px-3 py-2 rounded-xl text-sm font-semibold"
-                >
-                  View →
-                </button>
-              )}
-            </div>
+            )}
           </div>
-        </div>
-      ))}
-
-      {/* No groups */}
-      {!loading && groups.length === 0 && (
-        <div className="text-center py-10">
-          <p className="text-gray-400">No groups found</p>
-          <p className="text-gray-300 text-sm mt-1">Create one below!</p>
-        </div>
-      )}
-
-      {/* Create group */}
-      <button
-        onClick={() => setShowCreate(!showCreate)}
-        className="w-full py-3 border-2 border-dashed border-purple-300 rounded-2xl text-purple-500 font-semibold mb-4 mt-2"
-      >
-        + Create New Group
-      </button>
-
-      {showCreate && (
-        <div className="bg-white rounded-2xl p-4 border border-purple-100 mb-4 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-3">Create Group</h3>
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Group name (e.g. Kerala Runners)"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-purple-400 text-sm"
-            />
-            <textarea
-              placeholder="Description (e.g. Runners in Kerala training for marathons)"
-              value={newGroupDesc}
-              onChange={(e) => setNewGroupDesc(e.target.value)}
-              rows={3}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-purple-400 text-sm resize-none"
-            />
-            <button
-              onClick={createGroup}
-              disabled={creating}
-              className="w-full bg-[#6C63FF] text-white py-3 rounded-xl font-bold text-sm"
-            >
-              {creating ? 'Creating...' : 'Create Group'}
-            </button>
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
 
       {/* Fixed bottom */}
-      <div className="fixed bottom-0 left-0 right-0 p-5 bg-[#F5F0E8] border-t border-gray-100">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#F5F0E8] border-t border-gray-100">
         <button
           onClick={() => router.push('/home')}
-          className="w-full bg-[#6C63FF] text-white py-4 rounded-2xl font-black"
+          className="w-full bg-[#6C63FF] text-white py-3.5 rounded-2xl font-black"
         >
-          Continue to Home →
+          Go to Home →
         </button>
       </div>
 
