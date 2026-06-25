@@ -9,13 +9,14 @@ export default function Signup() {
 
   const handleSignup = () => {
     if (!name || !password) return
-    // store name locally for now
     localStorage.setItem('userName', name)
+    localStorage.removeItem('joinedGroups')  // clear old groups
+    localStorage.removeItem('userId')        // clear old user
     router.push('/goals')
   }
 
   return (
-    <main className="min-h-screen bg-[#F5F0E8] flex flex-col px-6 pt-16">
+    <main className="min-h-screen flex flex-col px-6 pt-16 relative z-10">
       
       {/* Header */}
       <div className="mb-10">
@@ -54,15 +55,7 @@ export default function Signup() {
           Continue →
         </button>
 
-        <p className="text-center text-gray-500 text-sm">
-          Already have an account?{' '}
-          <span 
-            className="text-purple-600 font-semibold cursor-pointer"
-            onClick={() => router.push('/login')}
-          >
-            Login
-          </span>
-        </p>
+        
       </div>
 
     </main>

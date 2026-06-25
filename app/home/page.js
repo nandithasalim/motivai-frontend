@@ -41,7 +41,42 @@ export default function HomePage() {
       setLoadingFeed(false)
     }
   }
-
+  useEffect(() => {
+    const name = localStorage.getItem('userName') || 'Friend'
+    setUserName(name)
+    const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
+    setJoinedGroups(stored)
+    const userId = localStorage.getItem('userId')
+    if (userId && userId !== 'null') {
+      fetchFeed()
+      fetchTasks(userId)  // add this
+    }
+  }, [])
+  
+  const fetchTasks = async (userId) => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tasks/${userId}`)
+      const data = await res.json()
+      const now = new Date()
+      setTasks(data
+        .filter(t => {
+          // show pending always, show completed only if within 24 hours
+          if (!t.completed) return true
+          const created = new Date(t.created_at)
+          const hours = (now - created) / (1000 * 60 * 60)
+          return hours < 24
+        })
+        .map(t => ({
+          id: t.id,
+          description: t.description,
+          completed: t.completed,
+          created_at: t.created_at
+        }))
+      )
+    } catch (err) {
+      console.error(err)
+    }
+  }
   const addTask = async () => {
     if (!newTask.trim()) return
     const userId = localStorage.getItem('userId')
@@ -64,14 +99,12 @@ export default function HomePage() {
 
   const completeTask = async (taskId) => {
     const userId = localStorage.getItem('userId')
-    // optimistic update
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t))
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tasks/${taskId}/complete?user_id=${userId}`, {
         method: 'PATCH'
       })
     } catch (err) {
-      // revert if failed
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: false } : t))
       console.error(err)
     }
@@ -79,24 +112,21 @@ export default function HomePage() {
 
   const sendToGroup = async (group) => {
     const userId = localStorage.getItem('userId')
-    
-    // store tasks to show in group chat
     localStorage.setItem('tasksToSend', JSON.stringify(completed))
-    
-    // post to group backend
     try {
       await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${group.id}/post?user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           completed_tasks: completed.map(t => t.description),
-          uncompleted_tasks: pending.map(t => t.description)
+          uncompleted_tasks: []
         })
       })
+      // clear completed tasks after sending
+      setTasks(prev => prev.filter(t => !t.completed))
     } catch (err) {
       console.error(err)
     }
-    
     setShowGroupModal(false)
     router.push(`/group/${group.id}`)
   }
@@ -240,30 +270,37 @@ export default function HomePage() {
 
       {/* Groups Tab */}
       {activeTab === 'groups' && (
-        <div className="px-6 flex flex-col gap-3 pb-20">
-          <button
-            onClick={() => router.push('/groups')}
-            className="w-full py-3 border border-dashed border-purple-300 rounded-xl text-purple-500 font-medium text-sm"
-          >
-            + Find or Create a Group
-          </button>
+        <div className="flex flex-col pb-20">
+          <div className="px-4 py-3">
+            <button
+              onClick={() => router.push('/groups')}
+              className="w-full py-3 border border-dashed border-purple-300 rounded-2xl text-purple-500 font-medium text-sm"
+            >
+              + Find or Create a Group
+            </button>
+          </div>
+
           {joinedGroups.length === 0 && (
             <div className="text-center py-10">
               <p className="text-gray-400 text-sm">No groups joined yet</p>
             </div>
           )}
+
           {joinedGroups.map(group => (
             <div
               key={group.id}
               onClick={() => router.push(`/group/${group.id}`)}
-              className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm cursor-pointer flex items-center gap-3"
+              className="flex items-center gap-4 mx-4 my-2 p-4 border-2 border-gray-100 rounded-3xl bg-white cursor-pointer shadow-sm active:bg-gray-50"
             >
-              <div className="w-10 h-10 rounded-full bg-[#6C63FF] flex items-center justify-center flex-shrink-0">
-                <span className="text-white font-black">{group.name?.charAt(0)}</span>
+              <div className="w-14 h-14 rounded-full bg-[#6C63FF] flex items-center justify-center flex-shrink-0">
+                <span className="text-white font-black text-2xl">{group.name?.charAt(0).toUpperCase()}</span>
               </div>
-              <div className="flex-1">
-                <p className="font-bold text-gray-900 text-sm">{group.name}</p>
-                <p className="text-xs text-gray-400 mt-0.5">{group.description}</p>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-black text-gray-900 text-base">{group.name}</p>
+                  <p className="text-xs text-gray-400 ml-2">Today</p>
+                </div>
+                <p className="text-sm text-gray-400 truncate">{group.description}</p>
               </div>
               <span className="text-gray-300 text-xl">›</span>
             </div>
