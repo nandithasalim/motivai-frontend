@@ -1,6 +1,6 @@
 "use client"
 import { useState, useEffect, useRef } from 'react'
-import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 
 const EMOJIS = ['❤️', '🔥', '👏', '💪', '🎉']
 
@@ -11,26 +11,42 @@ export default function GroupChat() {
   const [feed, setFeed] = useState([])
   const [loading, setLoading] = useState(true)
   const [userName, setUserName] = useState('')
+  const [userId, setUserId] = useState('')
   const [reactions, setReactions] = useState({})
-  const [sending, setSending] = useState(false)
-  const [sent, setSent] = useState(false)
   const [groupName, setGroupName] = useState('Group')
+  const [localMessage, setLocalMessage] = useState(null)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(null)
   const bottomRef = useRef(null)
 
   useEffect(() => {
-    const name = localStorage.getItem('userName') || 'You'
-    setUserName(name)
+    document.body.style.background = '#ECE5DD'
+    return () => { document.body.style.background = '' }
+  }, [])
 
-    // get group name from localStorage
+  useEffect(() => {
+    const name = localStorage.getItem('userName') || 'You'
+    const uid = localStorage.getItem('userId') || ''
+    setUserName(name)
+    setUserId(uid)
+
     const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
     const group = stored.find(g => g.id === groupId)
     if (group) setGroupName(group.name)
 
-    // check if coming from send tasks
-    const shouldSend = sessionStorage.getItem('sendTasks')
-    if (shouldSend) {
-      sessionStorage.removeItem('sendTasks')
-      handleSendTasks()
+    const tasksRaw = localStorage.getItem('tasksToSend')
+    if (tasksRaw) {
+      const tasks = JSON.parse(tasksRaw)
+      setLocalMessage({
+        id: 'local_' + Date.now(),
+        user_id: uid,
+        user_name: name,
+        completed_tasks: tasks.map(t => t.description),
+        uncompleted_tasks: [],
+        created_at: new Date().toISOString(),
+        agent_reaction: null,
+        isLocal: true
+      })
+      localStorage.removeItem('tasksToSend')
     }
 
     fetchGroupFeed()
@@ -38,42 +54,22 @@ export default function GroupChat() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [feed])
+  }, [feed, localMessage])
 
   const fetchGroupFeed = async () => {
-    const userId = localStorage.getItem('userId')
+    const uid = localStorage.getItem('userId')
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/feed?user_id=${userId}`)
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/feed?user_id=${uid}`)
       const data = await res.json()
       setFeed(data.posts || [])
+      // clear local message once real feed loads
+      setLocalMessage(null)
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
   }
-
-  const handleSendTasks = async () => {
-    const userId = localStorage.getItem('userId')
-    const tasksRaw = localStorage.getItem('tasksToSend')
-    if (!tasksRaw) return
-    
-    setSending(true)
-    try {
-      // tasks are already completed — agent will react via Redis Stream
-      // just show success state
-      await new Promise(r => setTimeout(r, 1000))
-      setSent(true)
-      localStorage.removeItem('tasksToSend')
-      // refresh feed after delay to show agent reaction
-      setTimeout(fetchGroupFeed, 5000)
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSending(false)
-    }
-  }
-
   const addReaction = (messageId, emoji) => {
     setReactions(prev => ({
       ...prev,
@@ -82,31 +78,37 @@ export default function GroupChat() {
         [emoji]: ((prev[messageId]?.[emoji]) || 0) + 1
       }
     }))
+    setShowEmojiPicker(null)
   }
 
+  const allMessages = [
+    ...feed,
+    ...(localMessage && feed.length === 0 ? [localMessage] : [])
+  ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+  
   return (
-    <main className="h-screen flex flex-col bg-[#F5F0E8] relative z-10">
+    <div className="fixed inset-0 flex flex-col" style={{ backgroundColor: '#ECE5DD' }}>
 
-      {/* Header — WhatsApp style */}
-      <div className="fixed top-0 left-0 right-0 bg-[#6C63FF] z-40 px-4 pt-10 pb-3 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-white text-xl">←</button>
-        <div className="w-9 h-9 rounded-full bg-white/30 flex items-center justify-center">
-          <span className="text-white font-black">{groupName.charAt(0)}</span>
+      {/* Header */}
+      <div className="bg-[#6C63FF] px-4 pt-12 pb-4 flex items-center gap-3 flex-shrink-0">
+        <button onClick={() => router.back()} className="text-white text-2xl w-8">←</button>
+        <div className="w-11 h-11 rounded-full bg-white/30 flex items-center justify-center flex-shrink-0">
+          <span className="text-white font-black text-xl">{groupName.charAt(0)}</span>
         </div>
         <div className="flex-1">
-          <p className="text-white font-bold text-sm">{groupName}</p>
+          <p className="text-white font-bold text-base">{groupName}</p>
           <p className="text-white/70 text-xs">{feed.length} posts</p>
         </div>
         <button
           onClick={fetchGroupFeed}
-          className="text-white/70 text-xs"
+          className="bg-white/20 text-white px-3 py-1.5 rounded-full text-xs font-semibold"
         >
           Refresh
         </button>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto pt-24 pb-32 px-3 flex flex-col gap-3">
+      <div className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-4">
 
         {loading && (
           <div className="flex justify-center py-20">
@@ -114,133 +116,134 @@ export default function GroupChat() {
           </div>
         )}
 
-        {!loading && feed.length === 0 && !sent && (
+        {!loading && allMessages.length === 0 && (
           <div className="text-center py-20">
-            <p className="text-4xl mb-3">💬</p>
-            <p className="font-bold text-gray-700">No posts yet</p>
+            <p className="text-5xl mb-4">💬</p>
+            <p className="font-bold text-gray-600 text-lg">No messages yet</p>
             <p className="text-sm text-gray-400 mt-1">Send your tasks to get started!</p>
           </div>
         )}
 
-        {/* Sent confirmation */}
-        {sent && (
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mx-2 text-center">
-            <p className="text-green-600 font-bold text-sm">✅ Tasks sent to group!</p>
-            <p className="text-green-400 text-xs mt-1">AI agent will react shortly...</p>
-          </div>
-        )}
+        {allMessages.map((post, index) => {
+          const isMe = post.user_id === userId || post.isLocal
+          return (
+            <div key={post.id || index} className={`flex flex-col gap-1 ${isMe ? 'items-end' : 'items-start'}`}>
 
-        {feed.map((post, index) => (
-          <div key={post.id || index} className="flex flex-col gap-1">
+              {/* Name — only show for others */}
+              {!isMe && (
+                <p className="text-xs font-bold text-[#6C63FF] px-3">
+                  {post.user_name || 'Member'}
+                </p>
+              )}
 
-            {/* User task message — left side */}
-            <div className="max-w-[85%]">
-              <p className="text-xs font-bold text-[#6C63FF] mb-1 px-2">
-                {post.user_name || 'Member'}
-              </p>
-              <div className="bg-white rounded-2xl rounded-tl-sm p-3 shadow-sm">
-                <p className="text-xs text-gray-400 font-medium mb-2">🎯 Daily Progress</p>
+              {/* Task bubble */}
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
+                isMe ? 'bg-[#DCF8C6] rounded-tr-sm' : 'bg-white rounded-tl-sm'
+              }`}>
+                <p className="text-xs text-gray-400 font-semibold mb-2">🎯 Daily Progress</p>
                 {post.completed_tasks?.map((task, i) => (
                   <p key={i} className="text-sm text-gray-800 py-0.5">✅ {task}</p>
                 ))}
                 {post.uncompleted_tasks?.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-gray-100">
+                  <div className="mt-2 pt-2 border-t border-gray-200">
                     {post.uncompleted_tasks.map((task, i) => (
                       <p key={i} className="text-sm text-gray-400 py-0.5">⬜ {task}</p>
                     ))}
                   </div>
                 )}
                 <p className="text-xs text-gray-300 mt-2 text-right">
-                  {post.created_at ? new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
+                  {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  {post.isLocal && ' · Sending...'}
                 </p>
               </div>
 
               {/* Reactions */}
-              <div className="flex gap-1 mt-1 px-2 flex-wrap items-center">
+              <div className={`flex gap-1 px-2 flex-wrap items-center ${isMe ? 'justify-end' : 'justify-start'}`}>
                 {Object.entries(reactions[post.id] || {}).map(([emoji, count]) => (
                   <span
                     key={emoji}
                     onClick={() => addReaction(post.id, emoji)}
-                    className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs cursor-pointer shadow-sm"
+                    className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm cursor-pointer shadow-sm"
                   >
                     {emoji} {count}
                   </span>
                 ))}
-                <div className="relative group">
-                  <button className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs text-gray-400 shadow-sm">
-                    😊
-                  </button>
-                  <div className="absolute bottom-8 left-0 bg-white rounded-2xl shadow-xl p-2 flex gap-2 invisible group-hover:visible border border-gray-100 z-10">
+                <button
+                  onClick={() => setShowEmojiPicker(showEmojiPicker === post.id ? null : post.id)}
+                  className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm text-gray-400 shadow-sm"
+                >
+                  😊
+                </button>
+                {showEmojiPicker === post.id && (
+                  <div className="bg-white rounded-2xl shadow-xl p-3 flex gap-3 border border-gray-100 z-10">
                     {EMOJIS.map(emoji => (
-                      <button key={emoji} onClick={() => addReaction(post.id, emoji)} className="text-xl hover:scale-125 transition-transform">
+                      <button key={emoji} onClick={() => addReaction(post.id, emoji)} className="text-2xl hover:scale-125 transition-transform">
                         {emoji}
                       </button>
                     ))}
                   </div>
-                </div>
+                )}
               </div>
-            </div>
 
-            {/* Agent reaction — right side */}
-            {post.agent_reaction && (
-              <div className="max-w-[85%] self-end">
-                <p className="text-xs font-bold text-orange-400 mb-1 px-2 text-right">MotivAI 🤖</p>
-                <div className="bg-[#6C63FF] rounded-2xl rounded-tr-sm p-3 shadow-sm">
-                  <p className="text-white text-sm">{post.agent_reaction}</p>
-                  <p className="text-white/50 text-xs mt-1 text-right">
-                    {post.created_at ? new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''}
-                  </p>
-                </div>
-                <div className="flex gap-1 mt-1 px-2 flex-wrap items-center justify-end">
-                  {Object.entries(reactions[`agent_${post.id}`] || {}).map(([emoji, count]) => (
-                    <span
-                      key={emoji}
-                      onClick={() => addReaction(`agent_${post.id}`, emoji)}
-                      className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs cursor-pointer shadow-sm"
+              {/* Agent reaction — always left */}
+              {post.agent_reaction && (
+                <div className="flex flex-col items-start gap-1 self-start mt-1">
+                  <p className="text-xs font-bold text-pink-500 px-3">MotivAI 🤖</p>
+                  <div className="max-w-[80%] bg-[#E8409A] rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+                    <p className="text-white text-sm leading-relaxed">{post.agent_reaction}</p>
+                    <p className="text-white/50 text-xs mt-2 text-right">
+                      {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <div className="flex gap-1 px-2 flex-wrap items-center">
+                    {Object.entries(reactions[`agent_${post.id}`] || {}).map(([emoji, count]) => (
+                      <span
+                        key={emoji}
+                        onClick={() => addReaction(`agent_${post.id}`, emoji)}
+                        className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm cursor-pointer shadow-sm"
+                      >
+                        {emoji} {count}
+                      </span>
+                    ))}
+                    <button
+                      onClick={() => setShowEmojiPicker(showEmojiPicker === `agent_${post.id}` ? null : `agent_${post.id}`)}
+                      className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-sm text-gray-400 shadow-sm"
                     >
-                      {emoji} {count}
-                    </span>
-                  ))}
-                  <div className="relative group">
-                    <button className="bg-white border border-gray-200 rounded-full px-2 py-0.5 text-xs text-gray-400 shadow-sm">
                       😊
                     </button>
-                    <div className="absolute bottom-8 right-0 bg-white rounded-2xl shadow-xl p-2 flex gap-2 invisible group-hover:visible border border-gray-100 z-10">
-                      {EMOJIS.map(emoji => (
-                        <button key={emoji} onClick={() => addReaction(`agent_${post.id}`, emoji)} className="text-xl hover:scale-125 transition-transform">
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+                    {showEmojiPicker === `agent_${post.id}` && (
+                      <div className="bg-white rounded-2xl shadow-xl p-3 flex gap-3 border border-gray-100 z-10">
+                        {EMOJIS.map(emoji => (
+                          <button key={emoji} onClick={() => addReaction(`agent_${post.id}`, emoji)} className="text-2xl hover:scale-125 transition-transform">
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-          </div>
-        ))}
+            </div>
+          )
+        })}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* Bottom — send tasks button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 px-4 py-3 flex items-center gap-3">
-        <div className="flex-1 bg-gray-100 rounded-full px-4 py-2.5 text-sm text-gray-400">
+      {/* Bottom bar */}
+      <div className="bg-[#F0F0F0] border-t border-gray-200 px-3 py-3 flex items-center gap-2 flex-shrink-0">
+        <div className="flex-1 bg-white rounded-full px-4 py-3 text-sm text-gray-400 shadow-sm">
           Only task updates can be shared 📋
         </div>
         <button
-          onClick={handleSendTasks}
-          disabled={sending}
-          className="bg-[#6C63FF] text-white w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+          onClick={() => router.push('/home')}
+          className="bg-[#6C63FF] text-white w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm text-xl"
         >
-          {sending ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"/>
-          ) : (
-            <span className="text-lg">📤</span>
-          )}
+          🏠
         </button>
       </div>
 
-    </main>
+    </div>
   )
 }

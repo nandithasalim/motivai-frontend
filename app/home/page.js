@@ -78,9 +78,25 @@ export default function HomePage() {
   }
 
   const sendToGroup = async (group) => {
-    // store tasks to send
+    const userId = localStorage.getItem('userId')
+    
+    // store tasks to show in group chat
     localStorage.setItem('tasksToSend', JSON.stringify(completed))
-    sessionStorage.setItem('sendTasks', 'true')
+    
+    // post to group backend
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${group.id}/post?user_id=${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          completed_tasks: completed.map(t => t.description),
+          uncompleted_tasks: pending.map(t => t.description)
+        })
+      })
+    } catch (err) {
+      console.error(err)
+    }
+    
     setShowGroupModal(false)
     router.push(`/group/${group.id}`)
   }
