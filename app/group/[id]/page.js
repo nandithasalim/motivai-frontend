@@ -28,6 +28,7 @@ export default function GroupChat() {
     const uid = localStorage.getItem('userId') || ''
     setUserName(name)
     setUserId(uid)
+  
 
     const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
     const group = stored.find(g => g.id === groupId)
@@ -55,7 +56,13 @@ export default function GroupChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [feed, localMessage])
-
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchGroupFeed()
+    }, 30000) // refresh every 30 seconds
+    
+    return () => clearInterval(interval)
+  }, [])
   const fetchGroupFeed = async () => {
     const uid = localStorage.getItem('userId')
     try {
@@ -85,7 +92,7 @@ export default function GroupChat() {
     ...feed,
     ...(localMessage && feed.length === 0 ? [localMessage] : [])
   ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-  
+
   return (
     <div className="fixed inset-0 flex flex-col" style={{ backgroundColor: '#ECE5DD' }}>
 
@@ -137,25 +144,28 @@ export default function GroupChat() {
               )}
 
               {/* Task bubble */}
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 shadow-sm ${
-                isMe ? 'bg-[#DCF8C6] rounded-tr-sm' : 'bg-white rounded-tl-sm'
-              }`}>
-                <p className="text-xs text-gray-400 font-semibold mb-2">🎯 Daily Progress</p>
-                {post.completed_tasks?.map((task, i) => (
-                  <p key={i} className="text-sm text-gray-800 py-0.5">✅ {task}</p>
-                ))}
-                {post.uncompleted_tasks?.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-gray-200">
-                    {post.uncompleted_tasks.map((task, i) => (
-                      <p key={i} className="text-sm text-gray-400 py-0.5">⬜ {task}</p>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-gray-300 mt-2 text-right">
-                  {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                  {post.isLocal && ' · Sending...'}
-                </p>
-              </div>
+<div 
+  style={{ maxWidth: '75%' }}
+  className={`rounded-2xl px-4 py-3 shadow-sm ${
+    isMe ? 'bg-[#DCF8C6] rounded-tr-sm' : 'bg-white rounded-tl-sm'
+  }`}
+>
+  <p className="text-xs text-gray-400 font-semibold mb-2">🎯 Daily Progress</p>
+  {post.completed_tasks?.map((task, i) => (
+    <p key={i} className="text-sm text-gray-800 py-0.5">✅ {task}</p>
+  ))}
+  {post.uncompleted_tasks?.length > 0 && (
+    <div className="mt-2 pt-2 border-t border-gray-200">
+      {post.uncompleted_tasks.map((task, i) => (
+        <p key={i} className="text-sm text-gray-400 py-0.5">⬜ {task}</p>
+      ))}
+    </div>
+  )}
+  <p className="text-xs text-gray-300 mt-2 text-right">
+    {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+    {post.isLocal && ' · Sending...'}
+  </p>
+</div>
 
               {/* Reactions */}
               <div className={`flex gap-1 px-2 flex-wrap items-center ${isMe ? 'justify-end' : 'justify-start'}`}>
@@ -187,14 +197,15 @@ export default function GroupChat() {
 
               {/* Agent reaction — always left */}
               {post.agent_reaction && (
-                <div className="flex flex-col items-start gap-1 self-start mt-1">
-                  <p className="text-xs font-bold text-pink-500 px-3">MotivAI 🤖</p>
-                  <div className="max-w-[80%] bg-[#E8409A] rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                    <p className="text-white text-sm leading-relaxed">{post.agent_reaction}</p>
-                    <p className="text-white/50 text-xs mt-2 text-right">
-                      {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </p>
-                  </div>
+                <div className="flex flex-col items-start gap-1 self-start mt-1 max-w-[75%]">
+                 <p className="text-xs font-bold text-pink-500 px-3">MotivAI 🤖</p>
+                 <div className="bg-[#E8409A] rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+                  <p className="text-white text-sm leading-relaxed">{post.agent_reaction}</p>
+                  <p className="text-white/50 text-xs mt-2 text-right">
+                    {new Date(post.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+  
                   <div className="flex gap-1 px-2 flex-wrap items-center">
                     {Object.entries(reactions[`agent_${post.id}`] || {}).map(([emoji, count]) => (
                       <span
