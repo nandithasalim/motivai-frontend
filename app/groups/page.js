@@ -14,7 +14,7 @@ export default function FindGroups() {
 
   useEffect(() => {
     // wake up Render
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/`)
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/metrics`)
     fetchMatchedGroups()
     const stored = JSON.parse(localStorage.getItem('joinedGroups') || '[]')
     setJoined(stored.map(g => g.id))

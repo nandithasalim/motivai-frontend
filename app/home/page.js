@@ -162,9 +162,9 @@ export default function HomePage() {
         <div className="px-6 flex flex-col gap-4 pb-40">
           <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
             <p className="text-xs text-gray-400 font-medium">TODAY</p>
-            <p className="text-lg font-black text-gray-900">
-              {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-            </p>
+            <p className="text-lg font-black text-gray-900" suppressHydrationWarning>
+  {typeof window !== 'undefined' ? new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) : ''}
+</p>
             <p className="text-sm text-gray-400 mt-1">{pending.length} tasks remaining</p>
           </div>
 
@@ -332,8 +332,8 @@ export default function HomePage() {
             <div className="bg-purple-50 rounded-2xl p-4 mb-4 border border-purple-100">
               <p className="text-xs font-bold text-purple-400 uppercase mb-2">Message Preview</p>
               <p className="text-sm font-bold text-gray-900 mb-2">🎯 {userName}'s Daily Progress</p>
-              <p className="text-xs text-gray-500 mb-2">
-                {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+              <p className="text-xs text-gray-500 mb-2" suppressHydrationWarning>
+              {typeof window !== 'undefined' ? new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }) : ''}
               </p>
               {completed.length > 0 ? (
                 <div className="space-y-1">
