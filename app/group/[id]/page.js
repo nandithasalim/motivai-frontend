@@ -38,8 +38,26 @@ export default function GroupChat() {
   }, [feed])
 
   useEffect(() => {
-    const interval = setInterval(fetchGroupFeed, 30000)
-    return () => clearInterval(interval)
+    // open SSE connection when user opens group chat
+    const eventSource = new EventSource(
+      `${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/stream`
+    )
+    
+    // when server signals new post → fetch feed
+    eventSource.onmessage = () => {
+      fetchGroupFeed()
+    }
+    
+    eventSource.onerror = () => {
+      // connection dropped → close and reconnect after 5 seconds
+      eventSource.close()
+      setTimeout(() => {
+        window.location.reload()  // simple reconnect
+      }, 5000)
+    }
+    
+    // cleanup when user leaves group chat
+    return () => eventSource.close()
   }, [])
 
   const fetchGroupFeed = async () => {
