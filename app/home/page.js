@@ -114,14 +114,17 @@ export default function HomePage() {
     const userId = localStorage.getItem('userId')
     localStorage.setItem('tasksToSend', JSON.stringify(completed))
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${group.id}/post?user_id=${userId}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${group.id}/post?user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           completed_tasks: completed.map(t => t.description),
-          uncompleted_tasks: []
+          completed_task_ids: completed.map(t => t.id).filter(id => typeof id === 'string'),
+          uncompleted_tasks: [],
+          uncompleted_task_ids: []
         })
       })
+      if (!res.ok) throw new Error(`post failed: ${res.status}`)
       // clear completed tasks after sending
       setTasks(prev => prev.filter(t => !t.completed))
     } catch (err) {
