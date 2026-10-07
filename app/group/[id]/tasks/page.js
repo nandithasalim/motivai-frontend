@@ -19,20 +19,57 @@ export default function GroupTasks() {
     if (group) setGroupName(group.name)
   }, [])
 
-  const addTask = () => {
-    if (!newTask.trim()) return
-    const task = { id: Date.now(), description: newTask.trim(), completed: false }
+  const isRealId = (id) => typeof id === 'string'
+
+const addTask = async () => {
+  const description = newTask.trim()
+  if (!description) return
+  const userId = localStorage.getItem('userId')
+  setNewTask('')
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, description })
+    })
+    if (!res.ok) throw new Error(`create task failed: ${res.status}`)
+    const data = await res.json()
+    const task = { id: data.task_id, description, completed: false }
     const updated = [...tasks, task]
     setTasks(updated)
     localStorage.setItem(`groupTasks_${groupId}`, JSON.stringify(updated))
-    setNewTask('')
+  } catch (err) {
+    console.error(err)
+    setNewTask(description)
   }
+}
 
-  const toggleTask = (id) => {
-    const updated = tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t)
-    setTasks(updated)
+const setCompleted = (id, value) => {
+  setTasks(prev => {
+    const updated = prev.map(t => t.id === id ? { ...t, completed: value } : t)
     localStorage.setItem(`groupTasks_${groupId}`, JSON.stringify(updated))
+    return updated
+  })
+}
+
+const toggleTask = async (id) => {
+  const task = tasks.find(t => t.id === id)
+  if (!task) return
+  const completed = !task.completed
+  setCompleted(id, completed)
+  if (!isRealId(id)) return
+  const userId = localStorage.getItem('userId')
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/v1/tasks/${id}/complete?user_id=${userId}&completed=${completed}`,
+      { method: 'PATCH' }
+    )
+    if (!res.ok) throw new Error(`update task failed: ${res.status}`)
+  } catch (err) {
+    console.error(err)
+    setCompleted(id, !completed)
   }
+}
 
   const deleteTask = (id) => {
     const updated = tasks.filter(t => t.id !== id)
@@ -48,14 +85,18 @@ export default function GroupTasks() {
     const userId = localStorage.getItem('userId')
   
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/post?user_id=${userId}`, {
+      const uncompleted = tasks.filter(t => !t.completed)
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/groups/${groupId}/post?user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           completed_tasks: completed.map(t => t.description),
-          uncompleted_tasks: tasks.filter(t => !t.completed).map(t => t.description)
+          completed_task_ids: completed.map(t => t.id).filter(isRealId),
+          uncompleted_tasks: uncompleted.map(t => t.description),
+          uncompleted_task_ids: uncompleted.map(t => t.id).filter(isRealId)
         })
       })
+      if (!res.ok) throw new Error(`post failed: ${res.status}`)
       const remaining = tasks.filter(t => !t.completed)
       setTasks(remaining)
       localStorage.setItem(`groupTasks_${groupId}`, JSON.stringify(remaining))
